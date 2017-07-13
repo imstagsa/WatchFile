@@ -4,15 +4,19 @@ public class WatchFileTask {
 
 	private String elastichost;
 	private String elasticport; 
-	private String folder; 
-	private String elasticEndpoint;
+	private String folder;
+	private String query;
+	private  String timeformat; 
+	private String querybody;
 	
 	public WatchFileTask()
 	{
 		this.elastichost = new String();
 		this.elasticport = new String();
 		this.setFolder(new String());
-		this.elasticEndpoint = new String();
+		this.query = new String();
+		this.querybody = new String();
+		this.timeformat = new String("yyyy/MM/dd HH:mm:ss");
 	}
 	
 	public String getElastichost() {
@@ -39,12 +43,27 @@ public class WatchFileTask {
 		this.folder = folder;
 	}
 
-	public String getElasticEndpoint() {
-		return elasticEndpoint;
+	public String getTimeformat() {
+		return timeformat;
 	}
 
-	public void setElasticEndpoint(String elasticEndpoint) {
-		this.elasticEndpoint = elasticEndpoint;
+	public void setTimeformat(String timeformat) {
+		this.timeformat = timeformat;
+	}
+	
+	public String getQuery() {
+		return query;
 	}
 
+	public void setQuery(String query) {
+		this.query = query;
+	}
+
+	public String getQuerybody() {
+		return querybody;
+	}
+
+	public void setQuerybody(String querybody) {
+		this.querybody = querybody;
+	}
 }

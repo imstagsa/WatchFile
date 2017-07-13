@@ -26,35 +26,15 @@ public class WatchFileWorker implements Runnable{
 	private ESLogger logger;
 	private Integer maxTasks = new Integer(20);
 	private WatchFileTask[] watchFileTask = new WatchFileTask[maxTasks];
-	//private String folder;
-	//private String elasticEndpoint;
-	//private Settings settings;
+	private Integer index = 0;
 	
 	public WatchFileWorker(Settings settings, ESLogger logger)
 	{
 		this.logger = logger;
-		//this.settings = settings;
 		this.logger.debug("WatchFileWorker  created");
 		parseConfig(settings);
 	}
 	
-	
-/*	private String encodeFileToBase64Binary(String fileName)
-	{
-	    File originalFile = new File(fileName);
-	    String encodedBase64 = null;
-	    try {
-	        //FileInputStream fileInputStreamReader = new FileInputStream(originalFile);
-	        byte[] bytes = new byte[(int)originalFile.length()];
-	        //fileInputStreamReader.read(bytes);
-	        encodedBase64 = new String(Base64.encodeBase64(bytes));
-	        return encodedBase64;
-	    } catch (Exception e) {
-	        logger.info(e.toString());
-	    }
-	    return null;
-	}*/
-
 	
 	private void parseConfig(Settings settings)
 	{
@@ -63,18 +43,36 @@ public class WatchFileWorker implements Runnable{
 				if(
 					settings.get("watchfiles.task"+i+".elastichost") != null &&
 					settings.get("watchfiles.task"+i+".elasticport") != null &&
-					settings.get("watchfiles.task"+i+".folder") != null &&
-					settings.get("watchfiles.task"+i+".elasticendpoint") != null)
+					settings.get("watchfiles.task"+i+".elasticendpoint") != null &&
+					settings.get("watchfiles.task"+i+".querybody") != null &&
+					settings.get("watchfiles.task"+i+".folder") != null)
+					
 				{
-					logger.info("Found task " + i);
-					WatchFileTask watchFilesTask = new WatchFileTask();
-					watchFilesTask.setElastichost(settings.get("watchfiles.task"+i+".elastichost"));
-					watchFilesTask.setElasticport(settings.get("watchfiles.task"+i+".elasticport"));
-					watchFilesTask.setFolder(settings.get("watchfiles.task"+i+".folder"));
-					//verify if folder exists
-					watchFilesTask.setElasticEndpoint(settings.get("watchfiles.task"+i+".elasticendpoint"));
-					watchFileTask[i] = watchFilesTask;
-					//printConfig(watchFilesTask, i);
+					File file = new File(settings.get("watchfiles.task"+i+".folder"));
+					if(file.exists() && file.canRead() && file.canWrite())
+					{
+						if(settings.get("watchfiles.task"+i+".querybody").contains("%FILE%"))
+						{
+							logger.info("Found task " + i);
+							WatchFileTask watchFilesTask = new WatchFileTask();
+							watchFilesTask.setElastichost(settings.get("watchfiles.task"+i+".elastichost"));
+							watchFilesTask.setElasticport(settings.get("watchfiles.task"+i+".elasticport"));
+							watchFilesTask.setQuery(settings.get("watchalert.task"+i+".query"));
+							watchFilesTask.setFolder(settings.get("watchfiles.task"+i+".folder"));
+							watchFilesTask.setTimeformat(settings.get("watchalert.task"+i+".timeformat"));
+							watchFilesTask.setQuerybody(settings.get("watchfiles.task"+i+".querybody"));
+							watchFileTask[i] = watchFilesTask;
+							//printConfig(watchFilesTask, i);
+						}
+						else
+						{
+							logger.error("The watchfiles.task"+i+".querybody does not contain %FILE% passphrase.");
+						}
+					}
+					else
+					{
+						logger.error("The ditectory for task "+ i +" is not exists or is not readable or writable.");
+					}
 				}			
 			
     	} catch (Exception e) {
@@ -118,17 +116,6 @@ public class WatchFileWorker implements Runnable{
 	} 
 	
 	
-	/**
-	 * %YEAR% in format yyyy
-	 * %MONTH% in fromat mm, possible value 01-12
-	 * %DAY% in format dd, possible value 01-31
-	 * %CURDATE% - see watchalert.taskX.timeformat.
-	 * %MESSAGE - message body
-	 * %HOST% - existing host ID in EMS
-	 * %EPOCHTIME% - Gets the number of seconds from the Java epoch of 1970-01-01T00:00:00Z.
-	 * %TIMESTAMP% - in format  yyyy-MM-ddT00:00:00Z.
-	 * %TIMESTAMP-PERIOD% - Current datetime minus period.Format  yyyy-MM-ddT00:00:00.000Z.
-	 */
 	private String replaceKeywords(String str, WatchFileTask watchAlertTask)
 	{
 		try{
@@ -137,9 +124,8 @@ public class WatchFileWorker implements Runnable{
 			str = str.replaceAll("%MONTH%", getDateTime("MM"));
 			str = str.replaceAll("%DAY%", getDateTime("dd"));
 			str = str.replaceAll("%TIMESTAMP%", getTimeStamp(0));
-			//str = str.replaceAll("%TIMESTAMP-PERIOD%", getTimeStamp(watchAlertTask.getPeriod()));
 			str = str.replaceAll("%EPOCHTIME%", Long.toString(getEpochTime()));
-			//str = str.replaceAll("%CURDATE%", getDateTime(watchAlertTask.getTimeformat()));	
+			str = str.replaceAll("%CURDATE%", getDateTime(watchAlertTask.getTimeformat()));	
 			str = str.replaceAll("%HOST%", "4443");
 			return str;
     	} catch (Exception e) {
@@ -171,7 +157,7 @@ public class WatchFileWorker implements Runnable{
 	}
 	
 	
-	private boolean addFile(String fileName)
+	private boolean addFile(WatchFileTask watchFileTask, String fileName)
 	{
 		try
 		{
@@ -179,18 +165,21 @@ public class WatchFileWorker implements Runnable{
             String base64String = encodeFileToBase64Binary(fileName);
             String fileType = identifyFileTypeUsingDefaultTikaForFile(fileName);
 			
-            String elasticEndpoint = new String("{\"cv\":\"%FILE%\"}");
+            //String elasticEndpoint = new String("{\"cv\":\"%FILE%\"}");
+            //String fileType = new String("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            String elasticEndpoint = watchFileTask.getQuerybody();
             elasticEndpoint  = elasticEndpoint.replaceAll(" ", "%20");
-            elasticEndpoint  = elasticEndpoint.replaceAll("%FILE%",base64String);
+            elasticEndpoint  = elasticEndpoint.replaceAll("%FILE%", base64String);
+            elasticEndpoint  = elasticEndpoint.replaceAll("%FILETYPE%", fileType);
             
             logger.info("elasticEndpoint: " + elasticEndpoint);
             
 			//String alert = replaceKeywords(watchAlertTask.getEmsHost(), watchAlertTask);
-			String attachment = new String("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 			
 			int contentLength = elasticEndpoint.getBytes().length;
 		
-			URL url = new URL("http://localhost:9200/trying-out-mapper-attachments/person/3/");
+			//URL url = new URL("http://localhost:9200/trying-out-mapper-attachments/person/3/");
+			URL url = new URL(watchFileTask.getQuery());
 			//logger.info("Alert string: " + alert + encodedAlertID);
 			HttpURLConnection connection = (HttpURLConnection) url.openConnection();           
 			connection.setRequestMethod("POST"); 
@@ -218,65 +207,57 @@ public class WatchFileWorker implements Runnable{
 	{
 		try
 		{
-			String folder = new String("/tmp/elastic");
-       	  	logger.info("We are in executeJob "); 
-        	File file = new File(folder);
+			for(int i = 0; i < maxTasks; i++)
+			{
+				index = 0;
+				if(watchFileTask[i] != null)
+				{
+					logger.info("We are in executeJob "); 
+					File file = new File(watchFileTask[i].getFolder());
 
-	        if (file.exists() && file.canRead() && file.canWrite()) 
-	        {        		  
-	        	Stream<Path> paths = Files.walk(Paths.get(folder)); 
-	        	{
-	        		logger.info("Found directory " + folder);
-	        		paths.forEach(filePath -> 
-	        		{
-	        			logger.info("Found entry:  " + filePath);
-	        			if (Files.isRegularFile(filePath)) 
-	        			{
-	        				logger.info("Found file : " + filePath.toString());
-	        				try {
-	        					if(addFile(filePath.toString()))
-	        					{
-	        						Files.delete(filePath);
-	        						logger.info("Deleted file " + filePath.toString());
-	        					}
-	        				} catch (Exception e) {
-	        					logger.error(e.toString());
-	        				}
-	        			}
-	        		});
-	        	}
-	        } 
-	        else
-	        {
-	        	logger.error("The ditectory \""+folder+"\" is not exists or is not readable or writable.");
-	        }
-	    }catch (Exception e) {
-	    	logger.error(e.toString());
-	    }
-	}
-		
-		
-/*		try(Stream<Path> paths = Files.walk(Paths.get("/home/elasticsearch"))) {
-			logger.info("Found directory /home/elasticsearch. ");
-			paths.forEach(filePath -> {
-				logger.info("Found entry:  " + filePath);
-		        if (Files.isRegularFile(filePath)) {
-		            logger.info("Found file : " + filePath.toString());
-		            addFile(filePath.toString());
-		        }
-		    });
-		} catch (IOException e) {
-			logger.info(e.toString());
+					if (file.exists() && file.canRead() && file.canWrite()) 
+					{        		  
+						Stream<Path> paths = Files.walk(Paths.get(watchFileTask[i].getFolder())); 
+						{
+							logger.info("Found directory " + watchFileTask[i].getFolder());
+							paths.forEach(filePath -> 
+							{
+								logger.info("Found entry:  " + filePath);
+								if (Files.isRegularFile(filePath)) 
+								{
+									logger.info("Found file : " + filePath.toString());
+									try {
+										if(addFile(watchFileTask[index], filePath.toString()))
+										{
+											Files.delete(filePath);
+											logger.info("Deleted file " + filePath.toString());
+										}
+									} catch (Exception e) {
+										logger.error(e.toString());
+									}
+								}
+							});
+						}
+					} 
+					else
+					{
+						logger.error("The ditectory \""+watchFileTask[i].getFolder()+"\" is not exists or is not readable or writable.");
+					}
+				}
+			}
+		}catch (Exception e) {
+			logger.error(e.toString());
 		}
 
-	}*/
+	}
+
 	
 	@Override
 	public void run() {
 		logger.info("ElasticOperationWorker run");
 		while (true) 
 		{
-			logger.info("executeJob() FileWatcher");
+			logger.info("executeJob() WatchFile");
 			executeJob();
 			try {
 				Thread.sleep(10000);
